@@ -1,2 +1,673 @@
 
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FastChat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0b141a;
+      color: #e9edef;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    header {
+      padding: 12px 16px;
+      background: #202c33;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+    .container {
+      padding: 16px;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto 24px;
+    }
+    .card {
+      background: #111b21;
+      border-radius: 12px;
+      padding: 12px 12px 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 0 0 1px #202c33;
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+    .muted {
+      font-size: 13px;
+      color: #8696a0;
+    }
+    #chatBox {
+      height: 260px;
+      background: #0a1014;
+      border-radius: 10px;
+      padding: 8px;
+      overflow-y: auto;
+      box-sizing: border-box;
+      margin-bottom: 8px;
+    }
+    .msg {
+      max-width: 80%;
+      margin: 4px 0;
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .me {
+      background: #005c4b;
+      margin-left: auto;
+    }
+    .other {
+      background: #202c33;
+    }
+    .meta {
+      font-size: 11px;
+      color: #8696a0;
+      margin-top: 2px;
+    }
+    textarea, input {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 1px solid #202c33;
+      background: #202c33;
+      color: #e9edef;
+      padding: 8px 10px;
+      font-size: 14px;
+      outline: none;
+    }
+    textarea {
+      resize: none;
+      min-height: 50px;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: #00a884;
+      color: #0b141a;
+    }
+    .btn-secondary {
+      background: #202c33;
+      color: #e9edef;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .row > div {
+      flex: 1;
+    }
+    label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px;
+      color: #8696a0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>FastChat</div>
+    <div id="userEmail" class="muted"></div>
+  </header>
+
+  <div class="container">
+    <!-- CHAT CARD -->
+    <div class="card">
+      <h2>Chat</h2>
+      <div id="loggedInAs" class="muted"></div>
+      <div id="chatBox"></div>
+
+      <textarea id="messageInput" placeholder="Type a message..."></textarea>
+      <div class="row">
+        <div></div>
+        <button id="sendBtn" class="btn-primary">Send</button>
+      </div>
+      <div class="muted" id="chatStatus"></div>
+    </div>
+
+    <!-- LOGIN / SIGNUP CARD -->
+    <div class="card">
+      <h2>Login / Sign Up</h2>
+      <p class="muted">Email + Password se login / sign up.</p>
+
+      <label>Full Name (sign up ke time)</label>
+      <input id="fullName" placeholder="Full name..." />
+
+      <div class="row">
+        <div>
+          <label>Email</label>
+          <input id="email" type="email" placeholder="email@example.com" />
+        </div>
+        <div>
+          <label>Password</label>
+          <input id="password" type="password" placeholder="Password" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="loginBtn" class="btn-secondary">Login</button>
+        <button id="signupBtn" class="btn-primary">Sign Up</button>
+        <button id="logoutBtn" class="btn-secondary">Logout</button>
+      </div>
+      <div class="muted" id="authStatus"></div>
+    </div>
+  </div>
+
+  <!-- FIREBASE + APP LOGIC -->
+  <script type="module">
+    // Firebase imports (v10)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      updateProfile
+    } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      query,
+      orderBy,
+      onSnapshot,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+    // === YOUR CONFIG (FastChat project) ===
+    const firebaseConfig = {
+      apiKey: "AIzaSyBr0GyK6LPgJIKhyGee904U5jzgiph3OIo",
+      authDomain: "fastchat-b8247.firebaseapp.com",
+      projectId: "fastchat-b8247",
+      storageBucket: "fastchat-b8247.firebasestorage.app",
+      messagingSenderId: "562233186738",
+      appId: "1:562233186738:web:31786e068d1d10f885acab",
+      measurementId: "G-KGZ5FM8M67"
+    };
+
+    // Init
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    // DOM
+    const userEmailEl  = document.getElementById("userEmail");
+    const loggedInAsEl = document.getElementById("loggedInAs");
+    const chatBox      = document.getElementById("chatBox");
+    const msgInput     = document.getElementById("messageInput");
+    const sendBtn      = document.getElementById("sendBtn");
+    const chatStatus   = document.getElementById("chatStatus");
+
+    const fullNameEl   = document.getElementById("fullName");
+    const emailEl      = document.getElementById("email");
+    const passwordEl   = document.getElementById("password");
+    const loginBtn     = document.getElementById("loginBtn");
+    const signupBtn    = document.getElementById("signupBtn");
+    const logoutBtn    = document.getElementById("logoutBtn");
+    const authStatus   = document.getElementById("authStatus");
+
+    let currentUser = null;
+
+    // ===== AUTH STATE =====
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user || null;
+      if (user) {
+        userEmailEl.textContent  = user.email;
+        loggedInAsEl.textContent = "Logged in as: " + (user.displayName || user.email);
+        authStatus.textContent   = "You are logged in.";
+        listenMessages();   // real-time chat
+      } else {
+        userEmailEl.textContent  = "";
+        loggedInAsEl.textContent = "Not logged in";
+        authStatus.textContent   = "Please login or sign up.";
+        chatBox.innerHTML        = "";
+      }
+    });
+
+    // ===== SIGN UP =====
+    signupBtn.onclick = async () => {
+      authStatus.textContent = "Signing up...";
+      try {
+        const email    = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+        const name     = fullNameEl.value.trim();
+
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        if (name) {
+          await updateProfile(cred.user, { displayName: name });
+        }
+        authStatus.textContent = "Sign up successful ✅";
+      } catch (err) {
+        authStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== LOGIN =====
+    loginBtn.onclick = async () => {
+      authStatus.textContent = "Logging in...";
+      try {
+        const email    = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+
+        await signInWithEmailAndPassword(auth, email, password);
+        authStatus.textContent = "Login successful ✅";
+      } catch (err) {
+        authStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== LOGOUT =====
+    logoutBtn.onclick = async () => {
+      try {
+        await signOut(auth);
+        authStatus.textContent = "Logged out.";
+      } catch (err) {
+        authStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== SEND MESSAGE =====
+    sendBtn.onclick = async () => {
+      if (!currentUser) {
+        chatStatus.textContent = "Please login first.";
+        return;
+      }
+      const text = msgInput.value.trim();
+      if (!text) return;
+
+      chatStatus.textContent = "Sending...";
+      try {
+        await addDoc(collection(db, "messages"), {
+          text,
+          uid: currentUser.uid,
+          email: currentUser.email,
+          createdAt: serverTimestamp()
+        });
+        msgInput.value = "";
+        chatStatus.textContent = "";
+      } catch (err) {
+        chatStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== LISTEN MESSAGES REAL-TIME =====
+    let unsubscribe = null;
+    function listenMessages() {
+      if (unsubscribe) unsubscribe();
+
+      const q = query(
+        collection(db, "messages"),
+        orderBy("createdAt", "asc")
+      );
+
+      unsubscribe = onSnapshot(q, (snap) => {
+        chatBox.innerHTML = "";
+        snap.forEach((doc) => {
+          const m = doc.data();
+          const div = document.createElement("div");
+          const mine = currentUser && m.uid === currentUser.uid;
+          div.className = "msg " + (mine ? "me" : "other");
+          div.innerHTML = `
+            <div>${m.text || ""}</div>
+            <div class="meta">${m.email || "User"}</div>
+          `;
+          chatBox.appendChild(div);
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+      });
+    }
+  </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FastChat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0b141a;
+      color: #e9edef;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    header {
+      padding: 12px 16px;
+      background: #202c33;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+    .container {
+      padding: 16px;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto 24px;
+    }
+    .card {
+      background: #111b21;
+      border-radius: 12px;
+      padding: 12px 12px 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 0 0 1px #202c33;
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+    .muted {
+      font-size: 13px;
+      color: #8696a0;
+    }
+    #chatBox {
+      height: 260px;
+      background: #0a1014;
+      border-radius: 10px;
+      padding: 8px;
+      overflow-y: auto;
+      box-sizing: border-box;
+      margin-bottom: 8px;
+    }
+    .msg {
+      max-width: 80%;
+      margin: 4px 0;
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .me {
+      background: #005c4b;
+      margin-left: auto;
+    }
+    .other {
+      background: #202c33;
+    }
+    .meta {
+      font-size: 11px;
+      color: #8696a0;
+      margin-top: 2px;
+    }
+    textarea, input {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 1px solid #202c33;
+      background: #202c33;
+      color: #e9edef;
+      padding: 8px 10px;
+      font-size: 14px;
+      outline: none;
+    }
+    textarea {
+      resize: none;
+      min-height: 50px;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: #00a884;
+      color: #0b141a;
+    }
+    .btn-secondary {
+      background: #202c33;
+      color: #e9edef;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .row > div {
+      flex: 1;
+    }
+    label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px;
+      color: #8696a0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>FastChat</div>
+    <div id="userEmail" class="muted"></div>
+  </header>
+
+  <div class="container">
+    <!-- CHAT CARD -->
+    <div class="card">
+      <h2>Chat</h2>
+      <div id="loggedInAs" class="muted"></div>
+      <div id="chatBox"></div>
+
+      <textarea id="messageInput" placeholder="Type a message..."></textarea>
+      <div class="row">
+        <div></div>
+        <button id="sendBtn" class="btn-primary">Send</button>
+      </div>
+      <div class="muted" id="chatStatus"></div>
+    </div>
+
+    <!-- LOGIN / SIGNUP CARD -->
+    <div class="card">
+      <h2>Login / Sign Up</h2>
+      <p class="muted">Email + Password se login / sign up.</p>
+
+      <label>Full Name (sign up ke time)</label>
+      <input id="fullName" placeholder="Full name..." />
+
+      <div class="row">
+        <div>
+          <label>Email</label>
+          <input id="email" type="email" placeholder="email@example.com" />
+        </div>
+        <div>
+          <label>Password</label>
+          <input id="password" type="password" placeholder="Password" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="loginBtn" class="btn-secondary">Login</button>
+        <button id="signupBtn" class="btn-primary">Sign Up</button>
+        <button id="logoutBtn" class="btn-secondary">Logout</button>
+      </div>
+      <div class="muted" id="authStatus"></div>
+    </div>
+  </div>
+
+  <!-- FIREBASE + APP LOGIC -->
+  <script type="module">
+    // Firebase imports (v10)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      updateProfile
+    } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      query,
+      orderBy,
+      onSnapshot,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+    // === YOUR CONFIG (FastChat project) ===
+    const firebaseConfig = {
+      apiKey: "AIzaSyBr0GyK6LPgJIKhyGee904U5jzgiph3OIo",
+      authDomain: "fastchat-b8247.firebaseapp.com",
+      projectId: "fastchat-b8247",
+      storageBucket: "fastchat-b8247.firebasestorage.app",
+      messagingSenderId: "562233186738",
+      appId: "1:562233186738:web:31786e068d1d10f885acab",
+      measurementId: "G-KGZ5FM8M67"
+    };
+
+    // Init
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    // DOM
+    const userEmailEl  = document.getElementById("userEmail");
+    const loggedInAsEl = document.getElementById("loggedInAs");
+    const chatBox      = document.getElementById("chatBox");
+    const msgInput     = document.getElementById("messageInput");
+    const sendBtn      = document.getElementById("sendBtn");
+    const chatStatus   = document.getElementById("chatStatus");
+
+    const fullNameEl   = document.getElementById("fullName");
+    const emailEl      = document.getElementById("email");
+    const passwordEl   = document.getElementById("password");
+    const loginBtn     = document.getElementById("loginBtn");
+    const signupBtn    = document.getElementById("signupBtn");
+    const logoutBtn    = document.getElementById("logoutBtn");
+    const authStatus   = document.getElementById("authStatus");
+
+    let currentUser = null;
+
+    // ===== AUTH STATE =====
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user || null;
+      if (user) {
+        userEmailEl.textContent  = user.email;
+        loggedInAsEl.textContent = "Logged in as: " + (user.displayName || user.email);
+        authStatus.textContent   = "You are logged in.";
+        listenMessages();   // real-time chat
+      } else {
+        userEmailEl.textContent  = "";
+        loggedInAsEl.textContent = "Not logged in";
+        authStatus.textContent   = "Please login or sign up.";
+        chatBox.innerHTML        = "";
+      }
+    });
+
+    // ===== SIGN UP =====
+    signupBtn.onclick = async () => {
+      authStatus.textContent = "Signing up...";
+      try {
+        const email    = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+        const name     = fullNameEl.value.trim();
+
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        if (name) {
+          await updateProfile(cred.user, { displayName: name });
+        }
+        authStatus.textContent = "Sign up successful ✅";
+      } catch (err) {
+        authStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== LOGIN =====
+    loginBtn.onclick = async () => {
+      authStatus.textContent = "Logging in...";
+      try {
+        const email    = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+
+        await signInWithEmailAndPassword(auth, email, password);
+        authStatus.textContent = "Login successful ✅";
+      } catch (err) {
+        authStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== LOGOUT =====
+    logoutBtn.onclick = async () => {
+      try {
+        await signOut(auth);
+        authStatus.textContent = "Logged out.";
+      } catch (err) {
+        authStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== SEND MESSAGE =====
+    sendBtn.onclick = async () => {
+      if (!currentUser) {
+        chatStatus.textContent = "Please login first.";
+        return;
+      }
+      const text = msgInput.value.trim();
+      if (!text) return;
+
+      chatStatus.textContent = "Sending...";
+      try {
+        await addDoc(collection(db, "messages"), {
+          text,
+          uid: currentUser.uid,
+          email: currentUser.email,
+          createdAt: serverTimestamp()
+        });
+        msgInput.value = "";
+        chatStatus.textContent = "";
+      } catch (err) {
+        chatStatus.textContent = "Error: " + err.message;
+      }
+    };
+
+    // ===== LISTEN MESSAGES REAL-TIME =====
+    let unsubscribe = null;
+    function listenMessages() {
+      if (unsubscribe) unsubscribe();
+
+      const q = query(
+        collection(db, "messages"),
+        orderBy("createdAt", "asc")
+      );
+
+      unsubscribe = onSnapshot(q, (snap) => {
+        chatBox.innerHTML = "";
+        snap.forEach((doc) => {
+          const m = doc.data();
+          const div = document.createElement("div");
+          const mine = currentUser && m.uid === currentUser.uid;
+          div.className = "msg " + (mine ? "me" : "other");
+          div.innerHTML = `
+            <div>${m.text || ""}</div>
+            <div class="meta">${m.email || "User"}</div>
+          `;
+          chatBox.appendChild(div);
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+      });
+    }
+  </script>
+</body>
+</html>
